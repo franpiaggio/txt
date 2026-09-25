@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { openDb } from '../src/db.js';
 import { createApp, limpiarTexto } from '../src/app.js';
 import { formatear } from '../src/format.js';
+import { LIMITS } from '../src/config.js';
 
 // Google falso: el "code" con el que vuelve el login es el nombre de la persona.
 const googleFalso = {
@@ -709,4 +710,38 @@ test('estadísticas: cuenta visitas sin bots ni estáticos, activos, y solo la v
   assert.equal((await s.pedir('/mod/estadisticas', { sesion: ana })).status, 404);
   // No queda ninguna IP guardada: solo hashes del día.
   assert.ok(!JSON.stringify(s.db.prepare('SELECT * FROM visitantes_dia').all()).includes('127.0.0.1'));
+});
+
+test('borrar una respuesta propia deja "Eliminado por su autor"; ni ajenas ni la que abre la publicación', async (t) => {
+  const s = await montar();
+  t.after(s.cerrar);
+  const ana = await s.entrar('ana');
+  const bea = await s.entrar('bea');
+  await s.pedir('/b/cultura/hilo', { sesion: ana, datos: { asunto: 'Asunto-de-ana', cuerpo: 'texto-de-ana' } });
+  s.avanzar(31);
+  await s.pedir('/h/1/responder', { sesion: bea, datos: { cuerpo: 'respuesta-de-bea' } });
+
+  assert.equal((await s.pedir('/p/2/borrar', { sesion: ana, datos: {} })).status, 404, 'ajena');
+  assert.equal((await s.pedir('/p/1/borrar', { sesion: ana, datos: {} })).status, 404, 'la que abre la publicación');
+  assert.equal((await s.pedir('/p/2/borrar', { sesion: bea, datos: {} })).status, 303);
+  const hilo = await s.texto('/h/1');
+  assert.ok(!hilo.includes('respuesta-de-bea') && hilo.includes('Eliminado por su autor'));
+  assert.ok(hilo.includes('texto-de-ana'));
+  assert.equal((await s.pedir('/p/2/borrar', { sesion: bea, datos: {} })).status, 404, 'ya borrada');
+});
+
+test('con plazo para borrar, una respuesta vieja ya no se puede borrar', async (t) => {
+  LIMITS.segParaBorrar = 60;
+  t.after(() => { LIMITS.segParaBorrar = null; });
+  const s = await montar();
+  t.after(s.cerrar);
+  const ana = await s.entrar('ana');
+  const bea = await s.entrar('bea');
+  await s.pedir('/b/cultura/hilo', { sesion: ana, datos: { asunto: 'Tema', cuerpo: 'texto-de-ana' } });
+  await s.pedir('/h/1/responder', { sesion: bea, datos: { cuerpo: 'respuesta-de-bea' } });
+  assert.ok((await s.texto('/h/1', bea)).includes('<summary>Borrar'), 'dentro del plazo');
+  s.avanzar(61);
+  assert.ok(!(await s.texto('/h/1', bea)).includes('<summary>Borrar'));
+  await s.pedir('/p/2/borrar', { sesion: bea, datos: {} });
+  assert.ok((await s.texto('/h/1')).includes('respuesta-de-bea'));
 });

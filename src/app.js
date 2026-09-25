@@ -135,12 +135,12 @@ export function createApp({
     crearSesion: db.prepare('INSERT INTO sessions (id_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)'),
     borrarSesion: db.prepare('DELETE FROM sessions WHERE id_hash = ?'),
     colaMod: db.prepare(`SELECT p.*, t.board, t.subject, u.created_at AS user_created,
-        (SELECT COUNT(*) FROM posts x WHERE x.user_id = p.user_id AND x.status = 'removed') AS eliminados,
+        (SELECT COUNT(*) FROM posts x WHERE x.user_id = p.user_id AND x.status = 'removed' AND x.body != '') AS eliminados,
         (SELECT group_concat(r.motivo, ', ') FROM reports r WHERE r.post_id = p.id AND r.resolved = 0) AS reportes
       FROM posts p JOIN threads t ON t.id = p.thread_id JOIN users u ON u.id = p.user_id
       WHERE p.status = 'queued' ORDER BY p.created_at`),
     reportadosMod: db.prepare(`SELECT p.*, t.board, t.subject, u.created_at AS user_created,
-        (SELECT COUNT(*) FROM posts x WHERE x.user_id = p.user_id AND x.status = 'removed') AS eliminados,
+        (SELECT COUNT(*) FROM posts x WHERE x.user_id = p.user_id AND x.status = 'removed' AND x.body != '') AS eliminados,
         (SELECT group_concat(r.motivo, ', ') FROM reports r WHERE r.post_id = p.id AND r.resolved = 0) AS reportes
       FROM posts p JOIN threads t ON t.id = p.thread_id JOIN users u ON u.id = p.user_id
       WHERE p.status = 'published' AND EXISTS (SELECT 1 FROM reports r WHERE r.post_id = p.id AND r.resolved = 0)
@@ -475,6 +475,7 @@ export function createApp({
       p.anon = anonId(p.user_id, thread.id);
       p.esAutorOp = p.user_id === autorOp;
       p.esMio = !!req.user && p.user_id === req.user.id;
+      p.borrable = p.esMio && p.id !== thread.op_post_id && enPlazoParaBorrar(p);
       if (p.status !== 'published') continue;
       for (const n of new Set([...p.body.matchAll(/>>(\d+)/g)].map((m) => Number(m[1])))) {
         if (n !== p.id && ids.has(n)) respuestas.set(n, [...(respuestas.get(n) ?? []), p.id]);
@@ -869,6 +870,29 @@ export function createApp({
       return { destino: `/h/${thread.id}${v.decision === 'queue' ? '?aviso=cola' : ''}#p${postId}` };
     });
     responder(r);
+  });
+
+  // Borrar una respuesta propia: queda "Eliminado por su autor" (cuerpo vacío, como al borrar la
+  // cuenta), así las respuestas que la citan no quedan colgadas. El mensaje que abre la
+  // publicación no se borra así.
+  const enPlazoParaBorrar = (p) => LIMITS.segParaBorrar == null || now() - p.created_at <= LIMITS.segParaBorrar * 1000;
+  const borrarRespuesta = db.transaction((p) => {
+    if (p.status === 'published') alRetirar(p);
+    db.prepare(`UPDATE posts SET body = '', status = 'removed', mod_reason = NULL WHERE id = ?`).run(p.id);
+    db.prepare(`UPDATE busqueda SET asunto = '', cuerpo = '' WHERE rowid = ?`).run(p.id);
+    db.prepare('DELETE FROM notificaciones WHERE post_id = ?').run(p.id);
+    q.log.run(null, 'borrar-respuesta', p.id, p.user_id, null, now());
+  });
+
+  app.post('/p/:id/borrar', (req, res) => {
+    const post = q.post.get(Number(req.params.id));
+    if (!post || post.status === 'removed' || q.hilo.get(post.thread_id).op_post_id === post.id) return noEncontrado(res);
+    if (!exigirUsuario(req, res)) return;
+    if (post.user_id !== req.user.id) return noEncontrado(res);
+    // Suspendida no se puede, igual que borrar la cuenta: sería borrar lo que se está revisando.
+    if (suspendido(req.user) || !enPlazoParaBorrar(post)) return res.redirect(303, `/h/${post.thread_id}#p${post.id}`);
+    borrarRespuesta(post);
+    res.redirect(303, `/h/${post.thread_id}?aviso=mensaje-borrado#p${post.id}`);
   });
 
   app.post('/p/:id/reportar', (req, res) => {

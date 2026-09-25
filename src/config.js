@@ -23,6 +23,8 @@ export const LIMITS = {
   limiteRespuestas: 500,
   segEntrePosts: 30,
   segEntreHilos: 600,
+  // Plazo para borrar una respuesta propia, en segundos desde que se publicó. null = sin plazo.
+  segParaBorrar: null,
   rechazosPorHora: 10,
   // Reportes de personas distintas que sacan un post de la vista hasta que lo revise un mod.
   reportesParaOcultar: 3,

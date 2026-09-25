@@ -17,6 +17,7 @@ const AVISOS = {
   cola: 'Tu mensaje quedó en revisión. Mientras tanto solo lo ves vos.',
   reportado: 'Gracias por el reporte. Lo va a revisar un moderador.',
   'cuenta-borrada': 'Tu cuenta y tus mensajes quedaron borrados.',
+  'mensaje-borrado': 'Tu respuesta quedó borrada.',
 };
 
 const AYUDA = raw(
@@ -316,7 +317,15 @@ function vistaPost(ctx, p, { ids = new Set(), esOp = false, resumen = false }) {
   ${!resumen && p.respuestas?.length
     ? html`<p class="respuestas">Respuestas: ${p.respuestas.map((n) => html`<a href="#p${n}">&gt;&gt;${n}</a> `)}</p>`
     : ''}
-  ${!resumen && ctx.user && p.status === 'published'
+  ${!resumen && p.borrable
+    ? html`<details class="reportar"><summary>Borrar</summary>
+    <form method="post" action="/p/${p.id}/borrar">
+      <input type="hidden" name="_csrf" value="${ctx.csrf}">
+      <span class="ayuda">No se puede deshacer.</span>
+      <button>Sí, borrar</button>
+    </form></details>`
+    : ''}
+  ${!resumen && ctx.user && p.status === 'published' && !p.esMio
     ? html`<details class="reportar"><summary>Reportar</summary>
     <form method="post" action="/p/${p.id}/reportar">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">

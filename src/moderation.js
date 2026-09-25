@@ -5,7 +5,7 @@ import { NORMAS } from './normas.js';
 
 export const MODELO = 'claude-sonnet-5';
 
-const Veredicto = z.object({
+export const Veredicto = z.object({
   decision: z.enum(['approve', 'queue', 'reject']),
   rule: z.enum(['ninguna', ...NORMAS.map((n) => n.id)]),
   reason: z.string(),
@@ -49,7 +49,7 @@ En "reason" escribí una frase corta y completa para los moderadores (el autor n
 // El texto del usuario no puede abrir ni cerrar las etiquetas <asunto>/<mensaje>: se reemplaza todo
 // "<" por "‹" en la copia que va al modelo (borrar etiquetas en una pasada se esquivaba con
 // "<</mensaje>/mensaje>", auditoría 2026-09-25). Lo publicado no cambia.
-const sinEtiquetas = (s) => s.replace(/</g, '‹');
+export const sinEtiquetas = (s) => s.replace(/</g, '‹');
 
 // Devuelve siempre un veredicto. Si la API falla o el modelo no responde algo usable,
 // el mensaje va a revisión humana: el sitio prefiere demorar un post a publicar uno malo.

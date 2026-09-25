@@ -1,7 +1,10 @@
 // Corre el filtro real contra casos de ejemplo y muestra decisión, motivo, latencia y costo.
 // Cada corrida gasta API (unos centavos). Uso: npm run probar-moderacion
+// Para probar otro modelo con la misma prueba: OPENROUTER_API_KEY y OPENROUTER_MODELO en .env
+// (cualquiera de openrouter.ai/models). El sitio sigue usando Claude.
 import '../src/env.js';
 import { crearModerador } from '../src/moderation.js';
+import { crearModeradorOpenRouter } from '../src/openrouter.js';
 
 // USD por millón de tokens de claude-sonnet-5.
 const PRECIO = { entrada: 2, salida: 10 };
@@ -134,7 +137,11 @@ const CASOS = [
   },
 ];
 
-const moderar = crearModerador({ siteName: 'textboard' });
+const conOpenRouter = Boolean(process.env.OPENROUTER_MODELO);
+const moderar = conOpenRouter
+  ? crearModeradorOpenRouter({ siteName: 'textboard', apiKey: process.env.OPENROUTER_API_KEY, modelo: process.env.OPENROUTER_MODELO })
+  : crearModerador({ siteName: 'textboard' });
+if (conOpenRouter) console.log(`Probando ${process.env.OPENROUTER_MODELO} por OpenRouter\n`);
 let entrada = 0;
 let salida = 0;
 let cacheLeido = 0;
@@ -161,4 +168,5 @@ for (const caso of CASOS) {
 // Caché: la lectura cuesta el 10% de la entrada y la escritura el 125%.
 const costo = (entrada * PRECIO.entrada + cacheLeido * PRECIO.entrada * 0.1 + cacheEscrito * PRECIO.entrada * 1.25 + salida * PRECIO.salida) / 1e6;
 console.log(`\n${aciertos}/${CASOS.length} coinciden con lo esperado`);
-console.log(`Costo total: US$${costo.toFixed(4)} · por mensaje: US$${(costo / CASOS.length).toFixed(4)}`);
+if (conOpenRouter) console.log('Costo: ver el panel de OpenRouter.');
+else console.log(`Costo total: US$${costo.toFixed(4)} · por mensaje: US$${(costo / CASOS.length).toFixed(4)}`);

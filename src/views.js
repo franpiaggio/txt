@@ -55,8 +55,9 @@ function barraAbajo(ctx) {
   <a href="${publicar}"><b>+</b>Publicar</a>
   ${user
     ? html`<a href="/respuestas"${activa(camino === '/respuestas')}><b>✉${novedades ? html`<span class="badge">${novedades}</span>` : ''}</b>Respuestas</a>
-  <details class="abajo-menu derecha"><summary${activa(camino === '/cuenta' || camino === '/mod')}><b>☺</b>Cuenta</summary>
+  <details class="abajo-menu derecha"><summary${activa(camino === '/cuenta' || camino === '/guardados' || camino === '/mod')}><b>☺</b>Cuenta</summary>
     <div class="menu-abajo">
+      <a href="/guardados">Guardados</a>
       <a href="/cuenta">Mi cuenta</a>
       ${esMod(user) ? html`<a href="/mod">Moderación</a><a href="/mod/estadisticas">Estadísticas</a>` : ''}
       <a href="/normas">Normas</a>
@@ -135,7 +136,7 @@ ${user ? html`<script src="${estatico('formularios.js')}" defer></script>` : ''}
       <details class="menu-cab">
         <summary class="icono" aria-label="Menú">${ICONOS.menu}<span>Menú</span></summary>
         <div class="menu-desplegable">
-          ${user ? html`<a href="/respuestas">Respuestas${ctx.novedades ? ` (${ctx.novedades})` : ''}</a><a href="/cuenta">Mi cuenta</a>` : html`<a href="/entrar">Entrar</a>`}
+          ${user ? html`<a href="/respuestas">Respuestas${ctx.novedades ? ` (${ctx.novedades})` : ''}</a><a href="/guardados">Guardados</a><a href="/cuenta">Mi cuenta</a>` : html`<a href="/entrar">Entrar</a>`}
           ${esMod(user) ? html`<a href="/mod">Moderación</a><a href="/mod/estadisticas">Estadísticas</a>` : ''}
           <a href="/normas">Normas</a>
           <a href="/formato">Formato</a>
@@ -210,7 +211,7 @@ function paginacion(actual, paginas, vista) {
 // La portada son los hilos de todos los tablones, ordenados por última respuesta.
 export function portada(ctx, { hilos, vista, pagina: actual, paginas, form }) {
   return html`${formHilo(ctx, null, form)}
-<p class="ayuda">Pseudoanónimo y moderado: cada mensaje se revisa antes de publicarse. <a href="/normas">Normas</a></p>
+<p class="ayuda">Pseudoanónimo y moderado: cada mensaje se revisa antes de publicarse. <a href="/normas">Normas</a>${ctx.user ? html` · <a href="/guardados">Guardados</a>` : ''}</p>
 ${selectorVista(vista)}
 ${listado(ctx, hilos, vista, { conTablon: true })}
 ${paginacion(actual, paginas, vista)}`;
@@ -327,7 +328,15 @@ function vistaPost(ctx, p, { ids = new Set(), esOp = false, resumen = false }) {
 </article>`;
 }
 
-export function hilo(ctx, { thread, board, posts, ids, form }) {
+// Guardar para leer después: un formulario (sin JavaScript) que guarda o saca de guardados.
+function botonGuardar(ctx, thread, guardado) {
+  if (!ctx.user || !thread.visible) return '';
+  return html` · <form method="post" action="/h/${thread.id}/guardar" class="en-linea"><input type="hidden" name="_csrf" value="${ctx.csrf}">${guardado
+    ? html`<input type="hidden" name="quitar" value="1"><button class="enlace">Sacar de guardados</button>`
+    : html`<button class="enlace">Guardar</button>`}</form>`;
+}
+
+export function hilo(ctx, { thread, board, posts, ids, form, guardado = false }) {
   let estado = '';
   if (thread.archived) estado = html`<p class="aviso">Publicación archivada: se puede leer pero ya no acepta respuestas.</p>`;
   else if (thread.locked) estado = html`<p class="aviso">Publicación cerrada: llegó al límite de respuestas.</p>`;
@@ -335,7 +344,7 @@ export function hilo(ctx, { thread, board, posts, ids, form }) {
   const ultimo = posts.length ? posts[posts.length - 1].id : 0;
   // data-hilo/data-ultimo los usa /static/vivo.js para traer lo nuevo sin recargar. Sin JS, la
   // página funciona igual que siempre.
-  return html`<p class="ayuda"><a href="/b/${board.slug}">← ${board.nombre}</a></p>
+  return html`<p class="ayuda"><a href="/b/${board.slug}">← ${board.nombre}</a>${botonGuardar(ctx, thread, guardado)}</p>
 <h1>${thread.subject}</h1>
 ${estado}
 <div id="posts"${abierto ? raw(` data-hilo="${thread.id}" data-ultimo="${ultimo}"`) : ''}>
@@ -370,6 +379,7 @@ export function privacidad(ctx) {
   <li><strong>Lo que publicás</strong>, con la fecha. Para el resto de los usuarios es pseudoanónimo: cada persona aparece con un código distinto en cada publicación. Internamente, cada mensaje queda asociado a tu cuenta, para poder moderar.</li>
   <li><strong>Los mensajes que el filtro rechazó</strong>, con el motivo, para detectar abusos.</li>
   <li><strong>Los reportes que hacés</strong> y las decisiones de moderación sobre tus mensajes o tu cuenta.</li>
+  <li><strong>Las publicaciones que guardás</strong>, para que las encuentres en Guardados. Solo las ves vos.</li>
   <li><strong>Estadísticas de uso, sin rastreo.</strong> Contamos cuántas páginas se ven por día y cuántas personas distintas, sin cookies ni IP guardadas: para no contar dos veces a la misma persona usamos un código anónimo que se descarta al día siguiente. Si tenés cuenta, registramos qué días entraste, solo para saber cuántos usuarios activos hay.</li>
   <li><strong>Una cookie de sesión</strong> (dura 30 días o hasta que salgas) y otra de un solo uso durante el ingreso con Google. No usamos cookies de publicidad ni de analítica.</li>
 </ul>
@@ -661,6 +671,14 @@ ${lista.length
   </li>`,
     )}</ul>`
   : html`<p>Todavía no hay respuestas.</p>`}`;
+}
+
+export function guardados(ctx, { lista }) {
+  return html`<h1>Guardados</h1>
+<p class="ayuda">Publicaciones que guardaste para leer después. Solo las ves vos. Se guardan o se sacan con el botón "Guardar" de cada publicación.</p>
+${lista.length
+  ? html`<ul class="mias">${lista.map((t) => html`<li><a href="/h/${t.id}">${t.subject}</a> <span class="ayuda">· ${boardBySlug(t.board)?.nombre ?? t.board} · ${t.reply_count} respuestas · ${fecha(t.bumped_at)}${t.archived ? ' · archivada' : ''}</span></li>`)}</ul>`
+  : html`<p>Todavía no guardaste nada.</p>`}`;
 }
 
 export function cuenta(ctx, { suspendida, error, mias = [] } = {}) {

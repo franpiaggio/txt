@@ -777,3 +777,34 @@ test('estadísticas: cuenta visitas sin bots ni estáticos, activos, y solo la v
   // No queda ninguna IP guardada: solo hashes del día.
   assert.ok(!JSON.stringify(s.db.prepare('SELECT * FROM visitantes_dia').all()).includes('127.0.0.1'));
 });
+
+test('guardados: guardar, verlos desde la portada, sacarlos y borrarlos con la cuenta', async (t) => {
+  const s = await montar();
+  t.after(s.cerrar);
+  const ana = await s.entrar('ana');
+  const bea = await s.entrar('bea');
+  await s.pedir('/b/cultura/hilo', { sesion: ana, datos: { asunto: 'Para-leer-despues', cuerpo: 'texto' } });
+
+  assert.ok((await s.texto('/', bea)).includes('href="/guardados"'), 'la portada lleva a guardados');
+  assert.ok(!(await s.texto('/')).includes('href="/guardados"'), 'sin sesión no aparece');
+  assert.equal((await s.pedir('/guardados')).status, 303);
+  assert.ok(!(await s.texto('/guardados', bea)).includes('Para-leer-despues'));
+
+  // Sin CSRF no se guarda.
+  assert.equal((await s.pedir('/h/1/guardar', { cookie: bea.cookie, datos: {} })).status, 403);
+
+  const r = await s.pedir('/h/1/guardar', { sesion: bea, datos: {} });
+  assert.equal(r.status, 303);
+  assert.equal(r.headers.get('location'), '/h/1');
+  assert.ok((await s.texto('/guardados', bea)).includes('Para-leer-despues'));
+  assert.ok((await s.texto('/h/1', bea)).includes('Sacar de guardados'));
+  assert.ok(!(await s.texto('/guardados', ana)).includes('Para-leer-despues'), 'solo los ve quien guardó');
+
+  await s.pedir('/h/1/guardar', { sesion: bea, datos: { quitar: '1' } });
+  assert.ok(!(await s.texto('/guardados', bea)).includes('Para-leer-despues'));
+  assert.equal((await s.pedir('/h/99/guardar', { sesion: bea, datos: {} })).status, 404);
+
+  await s.pedir('/h/1/guardar', { sesion: bea, datos: {} });
+  await s.pedir('/cuenta/borrar', { sesion: bea, datos: { confirmar: '1' } });
+  assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM guardados').get().n, 0);
+});

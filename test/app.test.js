@@ -861,6 +861,9 @@ test('búsqueda sin spoilers, avisos de lo guardado y links en publicaciones lar
   await s.pedir('/h/1/responder', { sesion: bea, datos: { cuerpo: 'qué carrera' } });
   const avisos = await s.texto('/respuestas', cami);
   assert.ok(avisos.includes('comentó en una publicación que guardaste'));
+  // Sacarla de guardados también saca esos avisos.
+  await s.pedir('/h/1/guardar', { sesion: cami, datos: { quitar: '1' } });
+  assert.ok(!(await s.texto('/respuestas', cami)).includes('comentó en una publicación que guardaste'));
   s.avanzar(40);
   await s.pedir('/h/1/responder', { sesion: bea, datos: { cuerpo: 'otra más' } });
   const hilo = await s.texto('/h/1');

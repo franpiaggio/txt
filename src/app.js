@@ -127,12 +127,16 @@ export function createApp({
       'INSERT INTO mod_log (mod_id, accion, post_id, target_user_id, nota, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     ),
     usuarioPorIdentidad: db.prepare('SELECT * FROM users WHERE identidad = ?'),
+    // Los avisos de una publicación guardada dejan de verse si se saca de guardados.
     contarNovedades: db.prepare(`SELECT COUNT(*) AS n FROM notificaciones x JOIN posts p ON p.id = x.post_id
       JOIN threads t ON t.id = p.thread_id
-      WHERE x.user_id = ? AND x.leida = 0 AND p.status = 'published' AND t.visible = 1`),
+      WHERE x.user_id = ? AND x.leida = 0 AND p.status = 'published' AND t.visible = 1
+      AND (x.tipo != 'guardado' OR EXISTS (SELECT 1 FROM guardados g WHERE g.user_id = x.user_id AND g.thread_id = t.id))`),
     notificaciones: db.prepare(`SELECT x.tipo, x.leida, x.created_at, p.id AS post_id, p.body, t.id AS thread_id, t.subject
       FROM notificaciones x JOIN posts p ON p.id = x.post_id JOIN threads t ON t.id = p.thread_id
-      WHERE x.user_id = ? AND p.status = 'published' AND t.visible = 1 ORDER BY x.id DESC LIMIT 100`),
+      WHERE x.user_id = ? AND p.status = 'published' AND t.visible = 1
+      AND (x.tipo != 'guardado' OR EXISTS (SELECT 1 FROM guardados g WHERE g.user_id = x.user_id AND g.thread_id = t.id))
+      ORDER BY x.id DESC LIMIT 100`),
     marcarLeidas: db.prepare('UPDATE notificaciones SET leida = 1 WHERE user_id = ? AND leida = 0'),
     guardado: db.prepare('SELECT 1 FROM guardados WHERE user_id = ? AND thread_id = ?'),
     guardar: db.prepare('INSERT OR IGNORE INTO guardados (user_id, thread_id, created_at) VALUES (?, ?, ?)'),
